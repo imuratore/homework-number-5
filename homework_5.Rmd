@@ -8,10 +8,12 @@ output: html_document
 
 ## Using the “KamilarAndCooperData.csv” dataset, run a linear regression looking at log(HomeRange_km2) in relation to log(Body_mass_female_mean) and report your ββ coeffiecients (slope and intercept). 
 ```{r}
+#importing data
 library(curl)
 f <- curl("https://raw.githubusercontent.com/fuzzyatelin/fuzzyatelin.github.io/master/AN597_Fall17/KamilarAndCooperData.csv")
 d <- read.csv(f, header = TRUE, sep = ",", stringsAsFactors = FALSE)
 
+#simple linear modeling
 m <- lm(data = d, log(HomeRange_km2) ~ log(Body_mass_female_mean))
 
 summary(m)
@@ -20,9 +22,9 @@ summary(m)
 ### β1 = 1.03643
 
 
-
 ## Then, use bootstrapping to sample from your data 1000 times with replacement, each time fitting the same model and calculating the same coefficients. This generates a sampling distribution for each ββ coefficient.
 
+### Using a method from R in Action to first create a sampling distribution using and loop and then to bootstrap from this distribution
 ```{r}
 #from R in action
 bs <- function(formula, data, indices) {
@@ -31,7 +33,7 @@ bs <- function(formula, data, indices) {
   return(coef(fit))
 }
 
-
+#using the boot function to bootstrap 1000 times and running the model each time
 library(boot)
 set.seed(1234)
 results <- boot(data=d, statistic=bs, R=1000, formula= log(HomeRange_km2) ~ log(Body_mass_female_mean))
@@ -40,15 +42,40 @@ print(results)
 
 
 ```
+
+### Using bootstrapping:
+### β0 = -9.441231
+### β1 = 1.036432
+
 ## Estimate the standard error for each of your ββ coefficients as the standard deviation of the sampling distribution from your bootstrap and determine the 95% CI for each of your ββ coefficients based on the appropriate quantiles from your sampling distribution.
+
+### Using the boot.ci function to estimate each CI (index=1 for intercept, and index=2 for slope)
 
 ```{r}
 
+#intercept
 boot.ci(results, type="bca", index=1)
 
+#slope
 boot.ci(results, type="bca", index=2)
 
 ```
+
+### β0 CI = (-10.656,  -8.363 )
+### β1 CI = ( 0.895,  1.201 )
+
+### Using boot function as above to estimate the SE for each coefficient
+
+```{r}
+set.seed(1234)
+results <- boot(data=d, statistic=bs, R=1000, formula= log(HomeRange_km2) ~ log(Body_mass_female_mean))
+
+print(results)
+
+```
+
+### β0 SE = 0.58424829
+### β1 SE = 0.07550854
 
 ## How does the former compare to the SE estimated from your entire dataset using the formula for standard error implemented in lm()?
 
@@ -60,6 +87,12 @@ summary(m)
 
 ```
 
+### SEs for coefficients from entire sample using lm:
+### β0 SE = 0.67293
+### β1 SE = 0.08488
+
+### These are both higher than the SEs estimated using bootstrapping. This makes sense since bootstrapping can narrow confidence intervals for different parameters.
+
 ## How does the latter compare to the 95% CI estimated from your entire dataset?
 
 ```{r}
@@ -67,28 +100,42 @@ summary(m)
 confint(m)
 
 ```
+### CIs for coefficients from entire sample using lm:
+### β0 CI = -10.7720889, -8.110374
+### β1 CI = 0.8685707  1.204292
+
+### These are both wider than the CIs estimated using bootstrapping. This makes sense since bootstrapping can narrow confidence intervals for different parameters.
 
 ## EXTRA CREDIT: + 2
 
 ##Write a FUNCTION that takes as its arguments a dataframe, “d”, a linear model, “m” (as a character string, e.g., “logHR~logBM”), a user-defined confidence interval level, “conf.level” (with default = 0.95), and a number of bootstrap replicates, “n” (with default = 1000). Your function should return a dataframe that includes: beta coefficient names; beta coefficients, standard errors, and upper and lower CI limits for the linear model based on your entire dataset; and mean beta coefficient estimates, SEs, and CI limits for those coefficients based on your bootstrap.
 
+### This function makes use of all the functions above and creates a data frame by merging a row of labels with a row of values. It also makes heavy use of the tidy function in order to extract the relevant values from the messy text returned by the functions used.
+
 ```{r}
 fun <- function(d, m, conf.level=0.95, n=1000){
+  #to load in tidy()
   library(broom)
-  category <- c("1name_B0", "2name_B1", "3B0", "4B1", "5B0_sample_SE", "6B1_sample_SE", "7B0_sample_lower_CI", "8B0_sample_upper_CI", "9B1_sample_lower_CI", "10B1_sample_upper_CI", "11B0_u", "12B1_u", "13B0_boot_SE", "14B1_boot_SE", "15B0_boot_lower_CI", "16B0_boot_upper_CI", "17B1_boot_lower_CI", "18BI_boot_upper_CI")
+  #setting up names for values
+  category <- c("name_B0", "name_B1", "B0_sample_u", "B1_sample_u", "B0_sample_SE", "B1_sample_SE", "B0_sample_lower_CI", "B0_sample_upper_CI", "B1_sample_lower_CI", "B1_sample_upper_CI", "B0_boot_u", "B1_boot_u", "B0_boot_SE", "B1_boot_SE", "B0_boot_lower_CI", "B0_boot_upper_CI", "B1_boot_lower_CI", "BI_boot_upper_CI")
+  #function from above to make sampling distribution
   bs <- function(formula, data, indices) {
     d <- data[indices,]
     fit <- lm(formula, data=d)
     return(coef(fit))
   }
+  #value is the name of the vector that will hold all the values
   value <- c("intercept")
+  #using regex to extract the name of the slope coefficient from the user-provided model string, m
   name <- gsub("^.*\\~","", m)
+  #adding it to vector
   value <- c(value, name)
-  
+  #getting coefficient values and standard errors from the original sample
   library(boot)
   mod <- lm(data=d, m)
   modd <- summary(mod)
   moddd <- tidy(modd)
+  #adding them to vector
   #B0 sample
   value <- c(value, moddd[1,2])
   #B1 sample
@@ -97,11 +144,11 @@ fun <- function(d, m, conf.level=0.95, n=1000){
   value <- c(value, moddd[1,3])
   #B1 sample se
   value <- c(value, moddd[2,3])
-  
-  #FIXXX
+  #getting coefficient CIs from the original sample
   co <- lm(data=d, m)
   con <- confint(co)
   conn <- tidy(con)
+  #adding them to vector
   #B0 sample lower
   value <- c(value, conn[1,2])
   #B0 sample upper
@@ -110,21 +157,22 @@ fun <- function(d, m, conf.level=0.95, n=1000){
   value <- c(value, conn[2,2])
   #B1 sample upper
   value <- c(value, conn[2,3])
-  
+  #getting coefficient values and standard errors from bootstrap
   set.seed(1234)
   results <- boot(data=d, statistic=bs, R=n, formula=m)
   t <- tidy(results)
-  #B0 u
+  #adding them to vector
+  #B0 boot
   value <- c(value, t[1,2])
-  #B1 u
+  #B1 boot
   value <- c(value, t[2,2])
   #B0 boot se
   value <- c(value, t[1,4])
   #B1 boot se
   value <- c(value, t[2,4])
-  
-  #FIX
+  #getting coefficient CIs from bootstrap
   b <- tidy(results, conf.int=TRUE, conf.level=0.95, conf.method = "bca")
+  #adding them to vector
   #B0 boot lower
   value <- c(value, b[1,5])
   #B0 boot upper
@@ -133,10 +181,21 @@ fun <- function(d, m, conf.level=0.95, n=1000){
   value <- c(value, b[2,5])
   #B1 boot upper
   value <- c(value, b[2,6])
+  #making data frame
   df <- rbind(category, value)
   dff <- data.frame(df)
   return(dff)
 }
+
+```
+
+### Testing the function
+
+```{r}
+
+m <- "log(HomeRange_km2)~log(Body_mass_female_mean)"
+
+fun(d,m)
 
 ```
 
